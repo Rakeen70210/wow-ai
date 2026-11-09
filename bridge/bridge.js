@@ -781,6 +781,7 @@ function agentLine(id) {
   const cmd = A.resolveCommand(id, acfg);
   if (!cmd.found) return `not found - ${cmd.note}`;
   const where = cmd.args.length ? `${cmd.file} ${cmd.args.join(' ')}` : cmd.file;
+  if (id === 'pi') return `${where}  [Pi tools unrestricted${acfg.model ? ', model ' + acfg.model : ''}]`;
   const rules = Array.isArray(acfg.allowedTools) ? acfg.allowedTools.length : 0;
   return `${where}  [${acfg.permissionMode || 'acceptEdits'}${id === 'codex' ? '' : ', ' + rules + ' allowed tool rules'}${acfg.model ? ', model ' + acfg.model : ''}]`;
 }

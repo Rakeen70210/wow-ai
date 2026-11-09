@@ -5,7 +5,7 @@
 #   capture.ps1 -TestImage strip.png    decode a PNG once and exit (used by tests)
 
 param(
-  [int]$Cell = 4,
+  [double]$Cell = 4,
   [int]$Cells = 200,
   [int]$MaxRows = 48,
   [int]$IntervalMs = 250,
@@ -36,7 +36,9 @@ function Emit($obj) {
 
 # Each channel is either fully on or off, so anything past mid-grey counts as on.
 function CellValue($bmp, [int]$c, [int]$r) {
-  $px = $bmp.GetPixel($c * $Cell + [int]($Cell / 2), $r * $Cell + [int]($Cell / 2))
+  $x = [int][Math]::Floor(($c + 0.5) * $Cell)
+  $y = [int][Math]::Floor(($r + 0.5) * $Cell)
+  $px = $bmp.GetPixel($x, $y)
   $v = 0
   if ($px.R -ge 128) { $v += 4 }
   if ($px.G -ge 128) { $v += 2 }
@@ -44,7 +46,7 @@ function CellValue($bmp, [int]$c, [int]$r) {
   return $v
 }
 
-function Decode($bmp) {
+function Decode($bmp, [double]$Cell) {
   $acc = 0; $nbits = 0
   $bytes = New-Object System.Collections.Generic.List[int]
   $needed = 6
@@ -85,9 +87,29 @@ function Decode($bmp) {
   return @{ id = (($bytes[2] * 256) + $bytes[3]); text = [Text.Encoding]::UTF8.GetString($payload) }
 }
 
+# A windowed client's actual cell size can change after relaunch. Validate the
+# full checksum before accepting any size, then prefer the last working size.
+$script:DetectedCell = $Cell
+function DecodeAuto($bmp) {
+  $rejected = $null
+  foreach ($size in @($script:DetectedCell, $Cell, 4.0, 3.8) | Select-Object -Unique) {
+    if ($bmp.Width -lt [Math]::Ceiling($Cells * $size) -or $bmp.Height -lt [Math]::Ceiling($MaxRows * $size)) { continue }
+    $candidate = Decode $bmp $size
+    if ($candidate -and -not $candidate.error) {
+      if ($script:DetectedCell -ne $size) {
+        [Console]::Error.WriteLine("capture cell size calibrated to $size px")
+        $script:DetectedCell = $size
+      }
+      return $candidate
+    }
+    if ($candidate) { $rejected = $candidate }
+  }
+  return $rejected
+}
+
 if ($TestImage -ne "") {
   $bmp = [System.Drawing.Bitmap]::FromFile($TestImage)
-  $msg = Decode $bmp
+  $msg = DecodeAuto $bmp
   $bmp.Dispose()
   if ($msg) { Emit $msg } else { Emit @{ error = "no valid strip in image" } }
   exit 0
@@ -96,8 +118,8 @@ if ($TestImage -ne "") {
 $lastId = -1
 $lastWarn = [DateTime]::MinValue
 $proc = $null
-$w = $Cells * $Cell
-$h = $MaxRows * $Cell
+$w = [int][Math]::Ceiling($Cells * [Math]::Max($Cell, 4.0))
+$h = [int][Math]::Ceiling($MaxRows * [Math]::Max($Cell, 4.0))
 while ($true) {
   if (-not $proc -or $proc.HasExited) {
     # Retail's exe is also Wow.exe: skip a game running from another client folder.
@@ -121,7 +143,7 @@ while ($true) {
   try { $g.CopyFromScreen($pt.X, $pt.Y, 0, 0, $bmp.Size) } catch { $ok = $false }
   $g.Dispose()
   if ($ok) {
-    $msg = Decode $bmp
+    $msg = DecodeAuto $bmp
     if ($msg -and $msg.error) {
       # Magic matched but the frame didn't validate: say so, at most every 5 s.
       if (([DateTime]::Now - $lastWarn).TotalSeconds -ge 5) {

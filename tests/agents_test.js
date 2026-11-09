@@ -14,7 +14,7 @@ const A = require('../bridge/agents');
 const SYS = 'The user is talking to you from inside World of Warcraft';
 
 test('agent ids, display names and the legacy Claude config keys', () => {
-  assert.deepEqual(A.agentIds(), ['claude', 'codex', 'grok', 'agy', 'hermes']);
+  assert.deepEqual(A.agentIds(), ['pi', 'claude', 'codex', 'grok', 'agy', 'hermes']);
   assert.equal(A.normalizeAgent(' Codex '), 'codex');
   assert.equal(A.normalizeAgent('gemini'), null);
   assert.equal(A.normalizeAgent(''), null);
@@ -26,6 +26,20 @@ test('agent ids, display names and the legacy Claude config keys', () => {
   assert.deepEqual(A.agentConfig({ ...legacy, agents: { claude: { model: 'sonnet' } } }, 'claude').model, 'sonnet');
   assert.deepEqual(A.agentConfig(legacy, 'codex'), {});
   assert.deepEqual(A.agentConfig({ agents: { grok: { model: 'grok-build' } } }, 'grok'), { model: 'grok-build' });
+});
+
+test('Pi: WSL launch, session and settled reply', () => {
+  const pi = A.AGENTS.pi;
+  assert.deepEqual(pi.args({ cfg: { wsl: { distribution: 'archlinux', user: 'root', piPath: '/pi' }, model: 'openai/model' }, cwd: 'C:\\project', resume: 'abc' }),
+    ['-d', 'archlinux', '-u', 'root', '--cd', 'C:\\project', '--', '/pi', '--mode', 'json', '--session', 'abc', '--model', 'openai/model']);
+  const p = pi.parser();
+  assert.equal(p.feed({ type: 'session', id: 'abc' }).session, 'abc');
+  p.feed({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], stopReason: 'stop' } });
+  assert.equal(p.feed({ type: 'agent_end' }).done, undefined);
+  assert.deepEqual(p.feed({ type: 'agent_settled' }).done, { text: 'ok', error: false });
+  const failure = pi.parser();
+  failure.feed({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'failed' } });
+  assert.deepEqual(failure.feed({ type: 'agent_settled' }).done, { text: 'failed', error: true });
 });
 
 test('Claude Code: headless stream-json with the allowlist, resume and system prompt; prompt on stdin', () => {

@@ -326,6 +326,26 @@ function hermesParser() {
   };
 }
 
+// Pi's JSON stream ends only at agent_settled; agent_end may precede a retry.
+function piParser() {
+  let last = null;
+  return {
+    feed(ev) {
+      const out = empty();
+      if (ev.type === 'session' && ev.id) out.session = ev.id;
+      if (ev.type === 'tool_execution_start') out.progress.push(describeToolUse({ type: 'tool_use', name: ev.toolName, input: ev.args || {} }));
+      if (ev.type === 'message_end' && ev.message && ev.message.role === 'assistant') {
+        const m = ev.message;
+        const text = (Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
+        last = { text: text || m.errorMessage || '', error: ['error', 'aborted', 'length'].includes(m.stopReason) };
+        if (text.trim()) out.progress.push(snippet(text));
+      }
+      if (ev.type === 'agent_settled') out.done = ev.aborted ? { text: 'Pi was aborted.', error: true } : (last || { text: 'Pi finished without an assistant response.', error: true });
+      return out;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The table
 // ---------------------------------------------------------------------------
@@ -340,6 +360,21 @@ function contextBlock(text) {
 }
 
 const AGENTS = {
+  pi: {
+    name: 'Pi', command: 'pi', install: 'Install Pi and configure a model and credentials.',
+    windowsPaths: () => [], posixPaths: () => [],
+    args({ cfg, resume, cwd }) {
+      const a = [];
+      if (cfg.wsl) a.push('-d', cfg.wsl.distribution, '-u', cfg.wsl.user, '--cd', cwd, '--', cfg.wsl.piPath);
+      a.push('--mode', 'json');
+      if (resume) a.push('--session', resume);
+      if (cfg.model) a.push('--model', cfg.model);
+      return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
+    },
+    input: ({ prompt, system, systemShort, resume }) => ({ stdin: contextBlock(resume ? systemShort || '' : system || '') + prompt }),
+    env: env => { if (process.platform === 'win32') env.WSLENV = [env.WSLENV, 'WOW_AI_MAP_FILE/p'].filter(Boolean).join(':'); return env; },
+    parser: piParser,
+  },
   claude: {
     name: 'Claude',
     command: 'claude',
@@ -600,6 +635,6 @@ function resolveCommand(id, cfg = {}) {
 module.exports = {
   AGENTS, DEFAULT_AGENT, agentIds, normalizeAgent, displayName, agentConfig,
   grokRules, snippet, contextBlock,
-  claudeParser, codexParser, grokParser, agyParser, hermesParser, codexItemLine, grokCall, grokRefusal, shellInner,
+  claudeParser, codexParser, grokParser, agyParser, hermesParser, piParser, codexItemLine, grokCall, grokRefusal, shellInner,
   resolveCommand, unwrapShim, nativeNextTo,
 };

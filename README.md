@@ -1,5 +1,7 @@
 # wow-ai
 
+> **Fork additions:** Pi harness support (native or Windows → WSL), persistent Pi chat sessions, and Windows capture fallback for 4/3.8-pixel cells. See [Pi setup](docs/PI-LOCAL-SETUP.md). The original project and instructions follow below.
+
 <p align="center">
   <img src="docs/screenshot.jpg" alt="The WoW AI chat window open in Goldshire, with a message on its way to a coding agent" width="900">
 </p>

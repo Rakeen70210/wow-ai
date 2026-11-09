@@ -14,5 +14,6 @@ tests/tmp/
 .DS_Store
 *.zip
 bridge/probe.png
+bridge/probe-windows.png
 bridge/mapjobs/
 __pycache__/
